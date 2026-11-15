@@ -1,0 +1,15 @@
+# Python-generated files
+__pycache__/
+.ruff_cache/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Machine-specific runtime configuration
+config/zenoh-config.json5
+config/node-config.json5

@@ -1,0 +1,41 @@
+[project]
+name = "depth-estim-zenoh-node"
+version = "0.1.0"
+description = "Estimate depth from Zenoh image streams and publish it over Zenoh"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "eclipse-zenoh>=1.10.2",
+    "json5>=0.17.3",
+    "numpy>=1.26.4",
+    "pillow>=13.0.0",
+    "pydantic>=2.14.3",
+    "torch>=2.15.0",
+    "torchvision>=0.29.2",
+    "transformers>=5.23.0",
+]
+
+[tool.uv]
+package = false
+
+[dependency-groups]
+depth-anything-3 = [
+    "addict>=2.4.0",
+    "depth-anything-3>=0.1.1",
+]
+dev = [
+    "pyright>=1.1.414",
+    "ruff>=0.17.5",
+]
+example = [
+    "pygame>=2.6.1",
+]
+
+[tool.pyright]
+venvPath = "."
+venv = ".venv"
+include = ["."]
+exclude = [".venv"]
+
+[tool.ruff.lint]
+extend-select = ["B", "I", "RUF", "SIM", "UP"]

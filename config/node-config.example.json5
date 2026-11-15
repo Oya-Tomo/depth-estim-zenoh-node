@@ -1,0 +1,30 @@
+{
+  // Depth of the stream named <name> is published on <zenoh_key_prefix>/<name>.
+  zenoh_key_prefix: "depth",
+
+  // One depth model per process. It is downloaded into the Hugging Face cache on first start.
+  estimator: {
+    backend: "transformers",
+    model_id: "depth-anything/Depth-Anything-V2-Metric-Indoor-Small-hf",
+    device: "cuda",
+    dtype: "float16",
+  },
+  // Depth Anything 3 instead (requires: uv sync --group depth-anything-3):
+  // estimator: {
+  //   backend: "depth_anything_3",
+  //   model_id: "depth-anything/DA3-SMALL",
+  //   device: "cuda",
+  // },
+
+  // Stream name -> Zenoh key of the image stream to estimate depth from.
+  streams: {
+    front: "camera/front",
+    view_main: "spherical_camera/view/main",
+  },
+
+  // QoS of the depth publishers.
+  publisher: {
+    congestion_control: "drop",
+    reliability: "best_effort",
+  },
+}

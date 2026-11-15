@@ -1,0 +1,20 @@
+{
+  mode: "peer",
+
+  // Accept direct P2P connections on every local network interface.
+  // The port differs from the camera nodes' 7447 so that both can run on one host.
+  listen: {
+    endpoints: ["tcp/0.0.0.0:7448"],
+  },
+
+  // Add router or peer endpoints here when multicast discovery is unavailable.
+  connect: {
+    endpoints: [],
+  },
+
+  scouting: {
+    multicast: {
+      enabled: true,
+    },
+  },
+}
