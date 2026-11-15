@@ -4,12 +4,14 @@
 
 - Python 3.12と[uv](https://docs.astral.sh/uv/)
 - CUDAが使えるNVIDIA GPUを推奨します。`device: "cpu"`でも動きますが低速です
-- camera-zenoh-nodeやspherical-camera-zenoh-nodeなどがZenohにpublishする画像stream
+- camera-zenoh-nodeやspherical-camera-zenoh-nodeなどがZenohにpublishするJPEG画像stream
 - viewer exampleを使う場合はdesktop display
 
 ```console
 $ uv sync
 ```
+
+JPEGのdecodeとencodeには[TorchCodec](https://github.com/meta-pytorch/torchcodec)を使います。CUDA deviceではnvJPEGで処理されます。
 
 ## Depth Anything 3 backend
 
@@ -19,9 +21,9 @@ $ uv sync
 $ uv sync --group depth-anything-3
 ```
 
-groupを任意にしているのは、このpackageが`transformers` backendには不要な重い依存（open3d、xformers、pycolmapなど）を持ち込むためです。groupを付けずに`uv sync`を実行すると、groupのpackageは削除されます。このpackageは`numpy<2`を要求します。lockfileは全groupをまとめて解決するため、project全体がNumPy 1.xとPython 3.12で動きます。groupには`addict`も入れてあります。`depth-anything-3` 0.1.1がimportしているのに、依存として宣言していないためです。
+groupを任意にしているのは、このpackageが`transformers` backendには不要な重い依存（open3d、xformers、pycolmapなど）を持ち込むためです。groupを付けずに`uv sync`を実行すると、groupのpackageは削除されます。このpackageは`numpy<2`を要求します。lockfileは全groupをまとめて解決するため、project全体がNumPy 1.xとPython 3.12で動きます。groupには`addict`も入れてあります。`depth-anything-3`がimportしているのに、依存として宣言していないためです。
 
-起動時にxformersがmemory-efficient attentionを使えないと警告することがありますが、Depth Anything 3はそのまま動作します。
+起動時に、xformersのmemory-efficient attentionが使えないという警告、3DGSのrenderingにはgsplatが必要だという通知、OmegaConfの非推奨警告が出ることがあります。いずれも深度推定には影響しません。
 
 ## モデルとHugging Faceのcache
 
@@ -44,7 +46,7 @@ $ cp config/node-config.example.json5 config/node-config.json5
 | ファイル | 用途 |
 | --- | --- |
 | `config/zenoh-config.json5` | Zenohのmode、endpoint、scouting |
-| `config/node-config.json5` | 深度モデル、画像stream、publisher QoS |
+| `config/node-config.json5` | 深度モデル、画像stream、カラーマップ画像、publisher QoS |
 
 どちらの実行時ファイルもGitの管理対象外です。ノードはcurrent working directoryから読み込むため、リポジトリrootで起動するか、`--zenoh-config`と`--node-config`を指定してください。ノード設定の各キーは[使い方](usage.md#ノード設定)で説明しています。
 
@@ -61,3 +63,5 @@ $ uv run ruff check .
 $ uv run pyright
 $ uv run python -m unittest discover -s tests -v
 ```
+
+testはモデルをダウンロードしません。Depth Anything 3のtestは`depth-anything-3` groupを入れたときだけ、CUDAのtestはGPUがあるときだけ実行されます。

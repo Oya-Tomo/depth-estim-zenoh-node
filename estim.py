@@ -5,13 +5,12 @@ from __future__ import annotations
 import os
 from abc import ABC, abstractmethod
 
-import numpy as np
-import numpy.typing as npt
 import torch
-from PIL import Image
+from torch.nn.functional import interpolate
 from transformers import AutoImageProcessor, AutoModelForDepthEstimation
 
 from config import (
+    BaseEstimatorConfig,
     DepthAnything3EstimatorConfig,
     EstimatorConfig,
     TransformersEstimatorConfig,
@@ -22,17 +21,25 @@ TORCH_DTYPES = {
     "float16": torch.float16,
     "bfloat16": torch.bfloat16,
 }
+DEPTH_ANYTHING_3_PATCH_SIZE = 14
 
 
 class DepthEstimator(ABC):
+    def __init__(self, config: BaseEstimatorConfig) -> None:
+        self.device = torch.device(config.device)
+
     @abstractmethod
-    def estimate(self, image: Image.Image) -> npt.NDArray[np.float32]:
-        """Return the depth of an RGB image as an array of shape (height, width)."""
+    def estimate(self, image: torch.Tensor) -> torch.Tensor:
+        """Return the depth of an RGB image, both on `self.device`.
+
+        `image` is uint8 of shape (3, height, width); the depth is float32 of shape
+        (height, width).
+        """
 
 
 class TransformersEstimator(DepthEstimator):
     def __init__(self, config: TransformersEstimatorConfig) -> None:
-        self._device = torch.device(config.device)
+        super().__init__(config)
         self._dtype = TORCH_DTYPES[config.dtype]
         self._processor = AutoImageProcessor.from_pretrained(
             config.model_id, revision=config.revision
@@ -41,28 +48,29 @@ class TransformersEstimator(DepthEstimator):
             AutoModelForDepthEstimation.from_pretrained(
                 config.model_id, revision=config.revision, dtype=self._dtype
             )
-            .to(self._device)
+            .to(self.device)
             .eval()
         )
 
     @torch.inference_mode()
-    def estimate(self, image: Image.Image) -> npt.NDArray[np.float32]:
-        inputs = self._processor(
-            images=image, return_tensors="pt", device=self._device
-        ).to(dtype=self._dtype)
+    def estimate(self, image: torch.Tensor) -> torch.Tensor:
+        height, width = image.shape[-2:]
+        # The torchvision-backend processors keep a tensor input on its device.
+        inputs = self._processor(images=image, return_tensors="pt").to(
+            dtype=self._dtype
+        )
         outputs = self._model(**inputs)
-        # The size is positional because the parameter is `source_sizes` for ZoeDepth
-        # and `target_sizes` for the other models; both yield depth at the image size.
-        depth = self._processor.post_process_depth_estimation(
-            outputs, [(image.height, image.width)]
-        )[0]["predicted_depth"]
-        return depth.float().cpu().numpy()
+        # Positional: the parameter is `source_sizes` for ZoeDepth, else `target_sizes`.
+        return self._processor.post_process_depth_estimation(
+            outputs, [(height, width)]
+        )[0]["predicted_depth"].float()
 
 
 class DepthAnything3Estimator(DepthEstimator):
     def __init__(self, config: DepthAnything3EstimatorConfig) -> None:
-        # The logger of depth_anything_3 reads its level at import time and
-        # otherwise prints INFO lines to stdout on every inference.
+        super().__init__(config)
+        # The package's logger reads its level at import time and otherwise prints
+        # INFO lines to stdout.
         os.environ.setdefault("DA3_LOG_LEVEL", "WARN")
         try:
             from depth_anything_3.api import DepthAnything3
@@ -73,27 +81,46 @@ class DepthAnything3Estimator(DepthEstimator):
                 "the depth_anything_3 backend requires the depth-anything-3 "
                 "dependency group: uv sync --group depth-anything-3"
             ) from error
-        self._process_res = config.process_res
         self._model = DepthAnything3.from_pretrained(
             config.model_id, revision=config.revision
-        ).to(torch.device(config.device))
+        ).to(self.device)
+        self._process_res = config.process_res
+        # The ImageNet statistics the model normalizes its input with.
+        self._mean = torch.tensor([0.485, 0.456, 0.406]).view(3, 1, 1).to(self.device)
+        self._std = torch.tensor([0.229, 0.224, 0.225]).view(3, 1, 1).to(self.device)
 
-    def estimate(self, image: Image.Image) -> npt.NDArray[np.float32]:
-        prediction = self._model.inference([image], process_res=self._process_res)
-        depth = prediction.depth[0]
-        if not prediction.is_metric:
-            # Non-metric depth is either up to scale or canonical (DA3METRIC):
-            # meters = depth * focal_px / 300 with the focal length of the processed
-            # image. Rescaling makes that hold with the focal length of the source
-            # frame. Metric depth is already in meters.
-            processed_height, processed_width = depth.shape
-            depth = depth * (
-                (processed_width / image.width + processed_height / image.height) / 2
-            )
-        return np.asarray(
-            Image.fromarray(depth).resize(image.size, Image.Resampling.BILINEAR),
-            dtype=np.float32,
+    @torch.inference_mode()
+    def estimate(self, image: torch.Tensor) -> torch.Tensor:
+        height, width = image.shape[-2:]
+        scale = self._process_res / max(height, width)
+        processed_height, processed_width = (
+            max(1, round(side * scale / DEPTH_ANYTHING_3_PATCH_SIZE))
+            * DEPTH_ANYTHING_3_PATCH_SIZE
+            for side in (height, width)
         )
+        # Resized here on the device: the package's `inference()` resizes on the CPU
+        # with PIL and OpenCV.
+        batch = interpolate(
+            image[None] / 255,
+            size=(processed_height, processed_width),
+            mode="bilinear",
+            antialias=True,
+            align_corners=False,
+        )
+        batch = (batch - self._mean) / self._std
+        # `forward` applies autocast itself; its default `export_feat_layers=None`
+        # crashes.
+        output = self._model(batch[None], export_feat_layers=[])
+        depth = output["depth"][0, 0]
+        # `output` is an addict.Dict, where a missing attribute is an empty Dict.
+        if not output.get("is_metric", 0):
+            # Non-metric depth is either up to scale (unaffected) or the canonical
+            # depth of DA3METRIC: meters = depth * focal_px / 300 with the focal
+            # length of the processed image. The factor makes that hold with the
+            # focal length of the source frame. Metric depth (DA3NESTED) is meters.
+            depth = depth * ((processed_width / width + processed_height / height) / 2)
+        depth = interpolate(depth[None, None], size=(height, width), mode="bilinear")
+        return depth[0, 0].float()
 
 
 def load_estimator(config: EstimatorConfig) -> DepthEstimator:
