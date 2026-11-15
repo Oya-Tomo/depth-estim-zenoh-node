@@ -2,7 +2,7 @@
 
 [日本語](README_ja.md)
 
-A Zenoh node that estimates depth from image streams. It subscribes to image frames such as the JPEG streams published by camera-zenoh-node and spherical-camera-zenoh-node, runs a depth model selected by its Hugging Face model ID, and publishes each depth map as a float32 array together with the attachment and timestamp of its source frame.
+A Zenoh node that estimates depth from JPEG image streams. It subscribes to frames such as those published by camera-zenoh-node and spherical-camera-zenoh-node, runs a depth model selected by its Hugging Face model ID, and publishes the depth of each frame twice: colorized as a JPEG image to look at, and as a float32 array to compute with. Both outputs have the size of the source frame and carry its attachment and timestamp. On a GPU, every frame stays on the device from JPEG decoding to JPEG encoding.
 
 ## Quick start
 
@@ -24,11 +24,13 @@ Set `estimator` and `streams` in `config/node-config.json5`, then start the node
 $ uv run node.py
 ```
 
-Display a depth stream:
+Display the colorized depth:
 
 ```console
 $ uv run --group example examples/viewer.py depth/front
 ```
+
+The depth values themselves are published on `depth/front/raw`; [Usage](docs/en/usage.md#zenoh-interface) shows how to read them.
 
 ## Documentation
 

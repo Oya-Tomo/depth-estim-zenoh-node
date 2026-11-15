@@ -1,8 +1,11 @@
 {
-  // Depth of the stream named <name> is published on <zenoh_key_prefix>/<name>.
+  // The stream named <name> is published on two keys:
+  //   <zenoh_key_prefix>/<name>      depth colorized as a JPEG image
+  //   <zenoh_key_prefix>/<name>/raw  depth as a float32 array in NumPy NPY format
   zenoh_key_prefix: "depth",
 
   // One depth model per process. It is downloaded into the Hugging Face cache on first start.
+  // Decoding, estimation, colorization, and encoding all run on `device`.
   estimator: {
     backend: "transformers",
     model_id: "depth-anything/Depth-Anything-V2-Metric-Indoor-Small-hf",
@@ -16,13 +19,24 @@
   //   device: "cuda",
   // },
 
-  // Stream name -> Zenoh key of the image stream to estimate depth from.
+  // Stream name -> Zenoh key of the JPEG image stream to estimate depth from.
   streams: {
     front: "camera/front",
     view_main: "spherical_camera/view/main",
   },
 
-  // QoS of the depth publishers.
+  // The colorized depth image.
+  image: {
+    // Matplotlib colormap name, such as "turbo", "viridis", "magma", or "Spectral".
+    // The suffix "_r" reverses a colormap.
+    colormap: "turbo",
+    // Depth values at the two ends of the colormap, such as [0, 5] for a model that
+    // outputs meters. null uses the minimum and maximum of each frame.
+    value_range: null,
+    jpeg_quality: 90,
+  },
+
+  // QoS of the image and raw publishers.
   publisher: {
     congestion_control: "drop",
     reliability: "best_effort",

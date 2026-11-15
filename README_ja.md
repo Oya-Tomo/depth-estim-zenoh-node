@@ -2,7 +2,7 @@
 
 [English](README.md)
 
-画像streamから深度を推定するZenohノードです。camera-zenoh-nodeやspherical-camera-zenoh-nodeがpublishするJPEGなどの画像frameをsubscribeし、Hugging Faceのmodel IDで選んだ深度モデルで推定します。深度mapはfloat32配列としてpublishし、元frameのattachmentとtimestampをそのまま付けます。
+JPEG画像streamから深度を推定するZenohノードです。camera-zenoh-nodeやspherical-camera-zenoh-nodeがpublishするframeをsubscribeし、Hugging Faceのmodel IDで選んだ深度モデルで推定します。推定した深度は、見るためのカラーマップ付きJPEG画像と、計算に使うfloat32配列の2通りでpublishします。どちらも元frameと同じ大きさで、元frameのattachmentとtimestampが付きます。GPUを使う場合、frameはJPEGのdecodeからencodeまでGPU上で処理されます。
 
 ## クイックスタート
 
@@ -24,11 +24,13 @@ $ uv sync --group depth-anything-3
 $ uv run node.py
 ```
 
-深度streamを表示します。
+カラーマップ付きの深度画像を表示します。
 
 ```console
 $ uv run --group example examples/viewer.py depth/front
 ```
+
+深度の値そのものは`depth/front/raw`にpublishされます。読み方は[使い方](docs/ja/usage.md#zenoh-interface)を参照してください。
 
 ## ドキュメント
 

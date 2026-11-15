@@ -9,6 +9,7 @@ from types import MappingProxyType
 from typing import Annotated, Literal, Self
 
 import json5
+import matplotlib
 import zenoh
 from pydantic import (
     AfterValidator,
@@ -23,6 +24,8 @@ from pydantic import (
 
 NonEmptyStr = Annotated[StrictStr, Field(pattern=r"\S")]
 PositiveInt = Annotated[int, Field(strict=True, ge=1)]
+FiniteFloat = Annotated[float, Field(strict=True, allow_inf_nan=False)]
+JpegQuality = Annotated[int, Field(strict=True, ge=1, le=100)]
 
 
 def _validate_concrete_key(key: str, field_name: str) -> str:
@@ -53,6 +56,7 @@ class ConfigModel(BaseModel):
 class BaseEstimatorConfig(ConfigModel):
     model_id: NonEmptyStr
     revision: NonEmptyStr = "main"
+    # Torch device string; every step of the frame path runs on it.
     device: NonEmptyStr
 
 
@@ -63,6 +67,7 @@ class TransformersEstimatorConfig(BaseEstimatorConfig):
 
 class DepthAnything3EstimatorConfig(BaseEstimatorConfig):
     backend: Literal["depth_anything_3"]
+    # Longer side of the image the model processes.
     process_res: PositiveInt = 504
 
 
@@ -70,6 +75,32 @@ EstimatorConfig = Annotated[
     TransformersEstimatorConfig | DepthAnything3EstimatorConfig,
     Field(discriminator="backend"),
 ]
+
+
+class ImageConfig(ConfigModel):
+    colormap: NonEmptyStr
+    # Depth values mapped to the two ends of the colormap; None takes the minimum
+    # and maximum of each frame.
+    value_range: tuple[FiniteFloat, FiniteFloat] | None = None
+    jpeg_quality: JpegQuality
+
+    @field_validator("colormap")
+    @classmethod
+    def validate_colormap(cls, colormap: str) -> str:
+        if colormap not in matplotlib.colormaps:
+            raise ValueError(f"colormap must be a matplotlib colormap name: {colormap}")
+        return colormap
+
+    @field_validator("value_range")
+    @classmethod
+    def validate_value_range(
+        cls, value_range: tuple[float, float] | None
+    ) -> tuple[float, float] | None:
+        if value_range is not None and value_range[0] >= value_range[1]:
+            raise ValueError(
+                f"value_range must be [low, high] with low < high: {list(value_range)}"
+            )
+        return value_range
 
 
 class PublisherConfig(ConfigModel):
@@ -85,6 +116,7 @@ class NodeConfig(ConfigModel):
         Field(min_length=1),
         AfterValidator(MappingProxyType),
     ]
+    image: ImageConfig
     publisher: PublisherConfig
 
     @field_validator("zenoh_key_prefix")
@@ -98,11 +130,13 @@ class NodeConfig(ConfigModel):
         if len(set(source_keys)) != len(source_keys):
             raise ValueError(f"stream source keys must be unique: {source_keys}")
         for name in self.streams:
-            depth_key = f"{self.zenoh_key_prefix}/{name}"
-            if depth_key in source_keys:
-                raise ValueError(
-                    f"depth key '{depth_key}' of stream '{name}' is also a source key"
-                )
+            image_key = f"{self.zenoh_key_prefix}/{name}"
+            for output_key in (image_key, f"{image_key}/raw"):
+                if output_key in source_keys:
+                    raise ValueError(
+                        f"output key '{output_key}' of stream '{name}' is also a "
+                        "source key"
+                    )
         return self
 
 

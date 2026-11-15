@@ -4,12 +4,14 @@
 
 - Python 3.12 and [uv](https://docs.astral.sh/uv/)
 - An NVIDIA GPU with CUDA is recommended; `device: "cpu"` works but is slow
-- Image streams over Zenoh, such as those of camera-zenoh-node or spherical-camera-zenoh-node
+- JPEG image streams over Zenoh, such as those of camera-zenoh-node or spherical-camera-zenoh-node
 - A desktop display for the viewer example
 
 ```console
 $ uv sync
 ```
+
+JPEG decoding and encoding use [TorchCodec](https://github.com/meta-pytorch/torchcodec), which runs nvJPEG on CUDA devices.
 
 ## Depth Anything 3 backend
 
@@ -19,9 +21,9 @@ The `depth_anything_3` backend needs the official `depth-anything-3` package, wh
 $ uv sync --group depth-anything-3
 ```
 
-The group is optional because the package brings heavy dependencies (open3d, xformers, pycolmap, and others) that the `transformers` backend does not need. A plain `uv sync` removes the group again. The package requires `numpy<2`; because one lockfile covers every group, the whole project runs on NumPy 1.x and Python 3.12. The group also lists `addict`, which `depth-anything-3` 0.1.1 imports without declaring it.
+The group is optional because the package brings heavy dependencies (open3d, xformers, pycolmap, and others) that the `transformers` backend does not need. A plain `uv sync` removes the group again. The package requires `numpy<2`; because one lockfile covers every group, the whole project runs on NumPy 1.x and Python 3.12. The group also lists `addict`, which `depth-anything-3` imports without declaring it.
 
-xformers may warn at startup that memory-efficient attention is unavailable; Depth Anything 3 still runs.
+At startup the package may print a warning that xformers memory-efficient attention is unavailable, a note that gsplat is required for 3DGS rendering, and an OmegaConf deprecation warning. None of them affects depth estimation.
 
 ## Models and the Hugging Face cache
 
@@ -44,7 +46,7 @@ $ cp config/node-config.example.json5 config/node-config.json5
 | File | Purpose |
 | --- | --- |
 | `config/zenoh-config.json5` | Zenoh mode, endpoints, and scouting |
-| `config/node-config.json5` | Depth model, image streams, and publisher QoS |
+| `config/node-config.json5` | Depth model, image streams, colorized image, and publisher QoS |
 
 Both runtime files are ignored by Git. The node reads them from the current working directory, so start it from the repository root or pass `--zenoh-config` and `--node-config`. [Usage](usage.md#node-configuration) describes every key of the node configuration.
 
@@ -61,3 +63,5 @@ $ uv run ruff check .
 $ uv run pyright
 $ uv run python -m unittest discover -s tests -v
 ```
+
+The tests need no model download. The Depth Anything 3 tests run only with the `depth-anything-3` group installed, and the CUDA test only with a GPU.
